@@ -1,0 +1,1318 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+    <meta charset="UTF-8">
+    <title>Rent Warehouse - 3 Step Wizard</title>
+    <style>
+    .hidden {
+        display: none;
+    }
+    .step-container {
+        margin: 20px 0;
+    }
+    .doba-option {
+        display: inline-block;
+        border: 1px solid #ccc;
+        padding: 10px;
+        margin: 5px;
+        cursor: pointer;
+        vertical-align: top;
+    }
+    .doba-option input[type="radio"] {
+        margin-right: 5px;
+    }
+
+    /* Шапка с указанием шагов (прогресс-бар) */
+    .progress-bar {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 20px;
+    }
+    .progress-bar .step {
+        flex: 1;
+        text-align: center;
+        padding: 10px;
+        border-bottom: 2px solid #ccc;
+        position: relative;
+    }
+    .progress-bar .step.active {
+        font-weight: bold;
+        border-color: #007bff;
+    }
+    .progress-bar .step::after {
+        content: '';
+        position: absolute;
+        width: 100%;
+        bottom: -2px;
+        left: 0;
+        border-bottom: 2px dashed #ccc;
+        z-index: -1;
+    }
+    .progress-bar .step:last-child::after {
+        width: 0;
+    }
+
+    /* Подсветка ошибок (inline-валидация) */
+    .invalid-input {
+        border: 1px solid red;
+    }
+    .error-message {
+        color: red;
+        display: none;
+        margin-left: 10px;
+    }
+    .error-message.active {
+        display: inline;
+    }
+
+    /* Модальное окно для kaucie */
+    .modal-overlay {
+        position: fixed;
+        top: 0; left: 0;
+        width: 100%; height: 100%;
+        background: rgba(0,0,0,0.5);
+        display: none;
+    }
+    .modal-content {
+        position: absolute;
+        top: 50%; left: 50%;
+        transform: translate(-50%, -50%);
+        background: #fff;
+        padding: 20px;
+        max-width: 600px;
+        border-radius: 4px;
+        box-shadow: 0 0 10px rgba(0,0,0,0.5);
+    }
+    .modal-content .close-btn {
+        float: right;
+        cursor: pointer;
+        font-size: 18px;
+        font-weight: bold;
+    }
+    .modal-content p {
+        margin: 0;
+        padding: 10px 0;
+    }
+
+    /* Подсказка - телефон (иконка вопроса) */
+    .info-icon {
+        display: inline-block;
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background-color: #007bff;
+        color: #fff;
+        text-align: center;
+        line-height: 18px;
+        font-size: 14px;
+        cursor: pointer;
+        margin-left: 5px;
+    }
+    .phone-tooltip {
+        position: absolute;
+        background: #f2f2f2;
+        border: 1px solid #ccc;
+        padding: 10px;
+        display: none;
+        width: 220px;
+        z-index: 100;
+    }
+    .sticker-badge {
+        position: absolute;
+        top: 0;
+        right: 0;
+        transform: translate(0, -50%);
+        color: #fff;
+        font-weight: bold;
+        font-size: 0.9em;
+        padding: 3px 8px;
+        border-radius: 4px;
+        /* Убрали background: здесь, ибо теперь разные через подклассы */
+    }
+
+    /* Новый код: разные фоны */
+    .sticker-badge.badge-popular {
+        background: blue; /* для 6mes */
+    }
+    .sticker-badge.badge-vyhodne {
+        background: green;    /* для 12mes */
+    }
+    .btn-next {
+    margin-top: 20px;
+    }
+    </style>
+</head>
+<body>
+
+<h1>Iba 3 kroky a TOP SKLAD je Váš</h1>
+
+<!-- Серверные ошибки, если есть -->
+{% if form.errors %}
+<div style="color:red;">
+    <strong>Form Errors:</strong>
+    <ul>
+        {% for field, errors in form.errors.items %}
+            <li><strong>{{ field }}</strong>: {{ errors|join:", " }}</li>
+        {% endfor %}
+    </ul>
+    <ul>
+      {% for error in form.non_field_errors %}
+        <li>{{ error }}</li>
+      {% endfor %}
+    </ul>
+</div>
+{% endif %}
+
+<!-- Прогресс-бар -->
+<div class="progress-bar">
+    <div id="stepIndicator1" class="step active">1. Výber skladu</div>
+    <div id="stepIndicator2" class="step">2. Údaje nájomcu</div>
+    <div id="stepIndicator3" class="step">3. Prihlasovacie údaje</div>
+</div>
+
+<form method="post">
+    {% csrf_token %}
+    
+    <!-- Скрытое поле, чтобы при серверной ошибке не слетать на шаг1 -->
+    <input type="hidden" id="current_step" name="current_step" value="{{ current_step|default:'1' }}">
+
+    <!-- Шаг 1: Výber skladu -->
+    <div id="step1" class="step-container">
+        <h2>Krok 1: Výber skladu</h2>
+
+        <p>Typ skladu: {{ form.typ_skladu }}</p>
+        <p>Lokalita: {{ form.lokalita }}</p>
+
+        <p>Prenajať sklad od:
+           <input type="date" name="prenajat_sklad_od" id="prenajat_sklad_od"
+                  value="{{ form.prenajat_sklad_od.value|default_if_none:'' }}">
+        </p>
+
+        <p>Veľkosť skladu: {{ form.velkost_skladu }}</p>
+
+        <!-- Добавляем span справа, где показываем "Plocha, Poschodie" -->
+        <p>
+          Číslo skladu: {{ form.cislo_skladu }}
+          <span id="sklad_info_span" style="margin-left: 15px; color: #444;"></span>
+        </p>
+
+        <div id="sklad_photos" style="display:flex; gap:10px; margin:5px 0;">
+          <img id="sklad_foto_main"   src="" alt="hlavné foto"  style="width:200px; height:auto;" />
+          <img id="sklad_foto_extra1" src="" alt="ďalšie foto1" style="width:200px; height:auto;" />
+          <img id="sklad_foto_extra2" src="" alt="ďalšie foto2" style="width:200px; height:auto;" />
+        </div>
+
+        <p>Doba prenájmu:</p>
+        <div id="doba_container"></div>
+
+        <button type="button" id="btnStep1Next" class="btn-next">Ďalej</button>
+    </div>
+
+    <!-- Шаг 2: Údaje nájomcu -->
+    <div id="step2" class="step-container hidden">
+        <h2>Krok 2: Údaje nájomcu</h2>
+
+        <div id="pravne_postavenie_block">
+            <p>Právne postavenie nájomcu: {{ form.pravne_postavenie_najomcu }}</p>
+        </div>
+
+        <div id="dph_info" class="hidden">
+            DPH vo výške 20% bude pripočítaná k zobrazenej cene skladu vo fáze platby
+        </div>
+
+        <!-- Fyzická osoba -->
+        <div id="fyzicka_osoba_fields" class="hidden">
+            <p>
+              Meno a priezvisko:
+              {{ form.meno_a_priezvisko }}
+              <span class="error-message" id="error_id_meno_a_priezvisko"></span>
+            </p>
+            <p>Dátum narodenia:
+               <input type="date" id="id_datum_narodenia" name="datum_narodenia"
+                      value="{{ form.datum_narodenia.value|default_if_none:'' }}">
+               <span class="error-message" id="error_id_datum_narodenia"></span>
+            </p>
+            <p>Adresa trvalého bydliska:</p>
+            <p>
+              Ulica:
+              {{ form.ulica }}
+              <span class="error-message" id="error_id_ulica"></span>
+            </p>
+            <p>
+              Číslo domu:
+              {{ form.cislo_domu }}
+              <span class="error-message" id="error_id_cislo_domu"></span>
+            </p>
+            <p>
+              PSČ:
+              {{ form.psc }}
+              <span class="error-message" id="error_id_psc"></span>
+            </p>
+            <p>
+              Mesto:
+              {{ form.mesto }}
+              <span class="error-message" id="error_id_mesto"></span>
+            </p>
+
+            <!-- Krajina для fyzicka -->
+            <p>Krajina:
+               <select id="id_krajina" name="krajina"></select>
+               <span class="error-message" id="error_id_krajina"></span>
+            </p>
+        </div>
+
+        <!-- Právnická osoba -->
+        <div id="pravnicka_osoba_fields" class="hidden">
+            <p>
+              Nazov:
+              {{ form.nazov }}
+              <span class="error-message" id="error_id_nazov"></span>
+            </p>
+            <p>
+              Zastúpený:
+              {{ form.zastupeny }}
+              <span class="error-message" id="error_id_zastupeny"></span>
+            </p>
+            <p>Sidlo:</p>
+            <p>
+              Ulica:
+              {{ form.sidlo_ulica }}
+              <span class="error-message" id="error_id_sidlo_ulica"></span>
+            </p>
+            <p>
+              Číslo domu:
+              {{ form.sidlo_cislo_domu }}
+              <span class="error-message" id="error_id_sidlo_cislo_domu"></span>
+            </p>
+            <p>
+              PSČ:
+              {{ form.sidlo_psc }}
+              <span class="error-message" id="error_id_sidlo_psc"></span>
+            </p>
+            <p>
+              Mesto:
+              {{ form.sidlo_mesto }}
+              <span class="error-message" id="error_id_sidlo_mesto"></span>
+            </p>
+            <p>
+              Krajina:
+              <select id="id_sidlo_krajina" name="sidlo_krajina"></select>
+              <span class="error-message" id="error_id_sidlo_krajina"></span>
+            </p>
+            <p>
+              IČO:
+              {{ form.ico }}
+              <span class="error-message" id="error_id_ico"></span>
+            </p>
+            <p>
+              DIČ:
+              {{ form.dic }}
+              <span class="error-message" id="error_id_dic"></span>
+            </p>
+            <p id="ic_dph_block" class="hidden">
+              IČ DPH:
+              {{ form.ic_dph }}
+              <span class="error-message" id="error_id_ic_dph"></span>
+            </p>
+        </div>
+
+        <button type="button" id="btnStep2Back" class="btn-next">Späť</button>
+        <button type="button" id="btnStep2Next" class="btn-next">Ďalej</button>
+    </div>
+
+    <!-- Шаг 3: Prihlasovacie údaje -->
+    <div id="step3" class="step-container hidden">
+        <h2>Krok 3: Prihlasovacie údaje</h2>
+        <div id="komunikacia_fields">
+            <!-- Скрытый input, куда склеиваем финальный номер -->
+            <input type="hidden" id="id_cislo_pre_komunikaciu" name="cislo_pre_komunikaciu"
+                   value="{{ form.cislo_pre_komunikaciu.value|default_if_none:'' }}">
+
+            <p>
+              <label for="phone_code">Telefónne číslo</label>
+              <span class="info-icon" id="phoneInfoIcon">?</span>
+              <span class="phone-tooltip" id="phoneTooltip">
+                Zadajte vaše telefónne číslo pre komunikáciu a prístup do skladu
+              </span>
+            </p>
+            <p>
+              <select id="phone_code" style="width:auto;"></select>
+              <input type="text" id="phone_rest" style="width:150px;" placeholder="zvyšok čísla">
+              <span class="error-message" id="phone_error"></span>
+            </p>
+
+            <p>Email: {{ form.email }} <span class="error-message" id="error_id_email"></span></p>
+            <p>Heslo (na prístup do účtu): {{ form.heslo }} 
+            <span id="togglePassword" style="cursor:pointer; margin-left:5px;">👁️</span>
+            <span class="error-message" id="error_id_heslo"></span></p>
+            <p>Opakovanie hesla:
+            <input type="password" id="id_heslo_2" name="heslo_2" onpaste="return false;" />
+            <span class="error-message" id="error_id_heslo_2"></span>
+            <span id="ok_id_heslo_2" style="color:green; font-weight:bold; display:none;">✔</span></p>
+            <p>
+              Som oboznámený (-á) s 
+              <a href="#" id="kaucieLink">podmienkou účtovaní vratnej kaucie</a>:
+              {{ form.suhlas_kaucia }}
+            </p>
+            <p>Som oboznámený (-á) s nájomnou zmluvou a bezvýhradne ju prijímam.: {{ form.suhlas_zmluva }}</p>
+        </div>
+
+        <button type="button" id="btnStep3Back" class="btn-next">Späť</button>
+        <!-- При некорректном шаге 3 кнопка disabled -->
+        <button type="submit" id="rent_button" disabled>Prenajať sklad</button>
+    </div>
+</form>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+
+  function loadLokalita(autoNext=true) {
+    fetch(`/ajax/lokalita/?typ_skladu=${document.querySelector('#id_typ_skladu').value}`)
+      .then(r=>r.json())
+      .then(data=>{
+        const lokalita=document.querySelector('#id_lokalita');
+        lokalita.innerHTML='';
+        if(data.length>0){
+          data.forEach(val=>{
+            const opt=document.createElement('option');
+            opt.value=val; opt.textContent=val;
+            lokalita.appendChild(opt);
+          });
+          lokalita.selectedIndex=0;
+          if(autoNext) loadVelkost(true);
+        }
+      });
+  }
+
+  if (document.querySelector('#id_typ_skladu').value) {
+    loadLokalita(true);
+  }
+});
+
+// Глазок для показа/скрытия пароля
+document.addEventListener('DOMContentLoaded', function() {
+    const hesloField = document.getElementById('id_heslo');
+    const togglePassword = document.getElementById('togglePassword');
+
+    togglePassword.addEventListener('click', () => {
+        if (hesloField.type === 'password') {
+            hesloField.type = 'text';
+        } else {
+            hesloField.type = 'password';
+        }
+    });
+});
+
+document.addEventListener('DOMContentLoaded', function() {
+    const hesloField = document.getElementById('id_heslo');
+    const heslo2Field = document.getElementById('id_heslo_2');
+    const heslo2Error = document.getElementById('error_id_heslo_2');
+    const heslo2OkMark = document.getElementById('ok_id_heslo_2');
+    const rentButton = document.getElementById('rent_button');
+
+    // Запрещаем вставку во второе поле пароля
+    heslo2Field.addEventListener('paste', (e) => e.preventDefault());
+
+    function checkPasswordsMatch() {
+        const pass1 = hesloField.value.trim();
+        const pass2 = heslo2Field.value.trim();
+
+        if (!pass2) {
+            heslo2Error.textContent = "";
+            heslo2Error.classList.remove('active');
+            heslo2Field.classList.remove('invalid-input');
+            heslo2OkMark.style.display = 'none';
+        } else if (pass1 !== pass2) {
+            heslo2Error.textContent = "Heslá sa nezhodujú. Použite rovnaké heslo, prosím.";
+            heslo2Error.classList.add('active');
+            heslo2Field.classList.add('invalid-input');
+            heslo2OkMark.style.display = 'none';
+        } else {
+            heslo2Error.textContent = "";
+            heslo2Error.classList.remove('active');
+            heslo2Field.classList.remove('invalid-input');
+            heslo2OkMark.style.display = 'inline';
+        }
+    }
+
+    // Проверка при вводе
+    hesloField.addEventListener('input', checkPasswordsMatch);
+    heslo2Field.addEventListener('input', checkPasswordsMatch);
+    heslo2Field.addEventListener('blur', checkPasswordsMatch);
+});
+</script>
+
+<!-- Модальное окно для kaucie -->
+<div class="modal-overlay" id="kaucieModalOverlay">
+  <div class="modal-content">
+    <span class="close-btn" id="kaucieModalClose">×</span>
+    <p>Podľa štandardných pravidiel nájmu, nájomca pri podpise zmluvy platí garančný poplatok (kaucia)
+       vo výške mesačnej splátky nájmu, ktorá sa pri skončení nájmu vracia nájomcovi.</p>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+
+    /* ==========================
+       (A) ОБЩАЯ ЛОГИКА, ШАГИ 1..3
+       ========================== */
+
+    const currentStepVal = parseInt('{{ current_step|default:"1" }}', 10) || 1;
+
+    const step1 = document.getElementById('step1');
+    const step2 = document.getElementById('step2');
+    const step3 = document.getElementById('step3');
+
+    const stepIndicator1 = document.getElementById('stepIndicator1');
+    const stepIndicator2 = document.getElementById('stepIndicator2');
+    const stepIndicator3 = document.getElementById('stepIndicator3');
+
+    function showStep(stepNumber) {
+        step1.classList.add('hidden');
+        step2.classList.add('hidden');
+        step3.classList.add('hidden');
+        stepIndicator1.classList.remove('active');
+        stepIndicator2.classList.remove('active');
+        stepIndicator3.classList.remove('active');
+
+        if (stepNumber === 1) {
+            step1.classList.remove('hidden');
+            stepIndicator1.classList.add('active');
+        } else if (stepNumber === 2) {
+            step2.classList.remove('hidden');
+            stepIndicator2.classList.add('active');
+        } else {
+            step3.classList.remove('hidden');
+            stepIndicator3.classList.add('active');
+        }
+        // Обновим текущее значение hidden-поля
+        document.getElementById('current_step').value = stepNumber.toString();
+    }
+
+    /* ==========================
+       (B) ДИНАМИКА: STEP 1
+       ========================== */
+    const typSkladu = document.querySelector('#id_typ_skladu');
+    const lokalita = document.querySelector('#id_lokalita');
+    const velkost = document.querySelector('#id_velkost_skladu');
+    const cislo   = document.querySelector('#id_cislo_skladu');
+    const dobaContainer = document.getElementById('doba_container');
+
+    function restoreSelectedOption(selectEl, val) {
+        let found = false;
+        for (let i=0; i < selectEl.options.length; i++) {
+            if (selectEl.options[i].value === val) {
+                selectEl.selectedIndex = i;
+                found = true;
+                break;
+            }
+        }
+        if (!found && selectEl.options.length > 0) {
+            selectEl.selectedIndex = 0;
+        }
+    }
+
+    function loadLokalita(autoNext=true) {
+        const currentLocVal = lokalita.value;
+        fetch(`/ajax/lokalita/?typ_skladu=${typSkladu.value}`)
+            .then(r => r.json())
+            .then(data => {
+                lokalita.innerHTML = '';
+                if (data.length > 0) {
+                    data.forEach(val => {
+                        const opt = document.createElement('option');
+                        opt.value = val;
+                        opt.textContent = val;
+                        lokalita.appendChild(opt);
+                    });
+                    restoreSelectedOption(lokalita, currentLocVal);
+                    if (autoNext) loadVelkost(true);
+                } else {
+                    lokalita.innerHTML = '<option value="">(empty)</option>';
+                    velkost.innerHTML = '<option value="">(empty)</option>';
+                    cislo.innerHTML = '<option value="">(empty)</option>';
+                    dobaContainer.innerHTML = '';
+                }
+                updateVisibility();
+            });
+    }
+
+    function loadVelkost(autoNext=true) {
+        const currentVelVal = velkost.value;
+        fetch(`/ajax/velkost/?typ_skladu=${typSkladu.value}&lokalita=${lokalita.value}`)
+            .then(r => r.json())
+            .then(data => {
+                velkost.innerHTML = '';
+                if (data.length > 0) {
+                    data.forEach(val => {
+                        const opt = document.createElement('option');
+                        opt.value = val;
+                        opt.textContent = val;
+                        velkost.appendChild(opt);
+                    });
+                    restoreSelectedOption(velkost, currentVelVal);
+                    if (autoNext) loadCislo(true);
+                } else {
+                    velkost.innerHTML = '<option value="">(empty)</option>';
+                    cislo.innerHTML = '<option value="">(empty)</option>';
+                    dobaContainer.innerHTML = '';
+                }
+                updateVisibility();
+            });
+    }
+
+    function loadCislo(autoNext=true) {
+        const currentCisloVal = cislo.value;
+        fetch(`/ajax/cislo_skladu/?typ_skladu=${typSkladu.value}&lokalita=${lokalita.value}&velkost_skladu=${velkost.value}`)
+            .then(r => r.json())
+            .then(data => {
+                cislo.innerHTML = '';
+                if (data.length > 0) {
+                    data.forEach(val => {
+                        const opt = document.createElement('option');
+                        opt.value = val;
+                        opt.textContent = val;
+                        cislo.appendChild(opt);
+                    });
+                    restoreSelectedOption(cislo, currentCisloVal);
+                    if (autoNext) loadDobaPrenajmu();
+                } else {
+                    cislo.innerHTML = '<option value="">(empty)</option>';
+                    dobaContainer.innerHTML = '';
+                }
+
+                updateVisibility();
+
+                // [НОВЫЙ ВЫЗОВ] Если cislo выбрано уже при загрузке — сразу показываем info
+                showSkladInfo();
+            });
+    }
+
+    cislo.addEventListener('change', () => {
+        loadDobaPrenajmu();
+        showSkladInfo();
+    });
+
+
+    function loadDobaPrenajmu() {
+        fetch(`/ajax/doba_prenajmu/?cislo_skladu=${cislo.value}`)
+            .then(r => r.json())
+            .then(data => {
+                dobaContainer.innerHTML = '';
+                if (data.length > 0) {
+                    // ... внутри then(data => { ...
+                        data.forEach((item, index) => {
+                            const label = document.createElement('label');
+                            label.className = 'doba-option';
+                            // Позволим стикеру позиционироваться
+                            label.style.position = 'relative';
+
+                            // Создаём <input type="radio">
+                            const radio = document.createElement('input');
+                            radio.type = 'radio';
+                            radio.name = 'doba_prenajmu';
+                            radio.value = item.value;
+                            if (index===0) radio.checked = true;
+                            label.appendChild(radio);
+
+                            // Разносим текст "до скобок / скобки" как прежде
+                            const match = item.text.match(/^(.*?)\s*\((.*)\)\s*$/);
+                            if (match) {
+                                const topLine    = match[1].trim();
+                                const secondLine = '(' + match[2].trim() + ')';
+                                label.appendChild(document.createTextNode(topLine));
+                                label.appendChild(document.createElement('br'));
+                                label.appendChild(document.createTextNode(secondLine));
+                            } else {
+                                // Если нет скобок
+                                label.appendChild(document.createTextNode(item.text));
+                            }
+
+                            // === НОВАЯ ЛОГИКА: если value=='6mes' → ⭐️ Populárne; если value=='12mes' → 🔥 Výhodné
+                            let stickerText = '';
+                            if (item.value === '6mes') {
+                                stickerText = '⭐️ Populárne';
+                            } else if (item.value === '12mes') {
+                                stickerText = '🔥 Výhodné';
+                            }
+
+                            if (stickerText) {
+                                const sticker = document.createElement('span');
+                                sticker.className = 'sticker-badge';
+                                sticker.textContent = stickerText;
+
+                                // Новый код: если 6mes → добавим класс "badge-popular",
+                                //            если 12mes → класс "badge-vyhodne"
+                                if (item.value === '6mes') {
+                                    sticker.classList.add('badge-popular');
+                                } else if (item.value === '12mes') {
+                                    sticker.classList.add('badge-vyhodne');
+                                }
+
+                                label.appendChild(sticker);
+                            }
+
+                            dobaContainer.appendChild(label);
+                            if (item.value === '3mes') {
+                                dobaContainer.appendChild(document.createElement('br'));
+                            }
+                        });
+
+                } else {
+                    dobaContainer.textContent = "Žiadne možnosti.";
+                }
+                updateVisibility();
+            });
+    }
+
+    // [НОВЫЙ КОД] Функция показывает skladova_plocha и poschodie
+    function showSkladInfo() {
+    const cVal = cislo.value;
+    if (!cVal) {
+        document.getElementById('sklad_info_span').textContent = '';
+        // + очистим фото
+        document.getElementById('sklad_foto_main').src   = '';
+        document.getElementById('sklad_foto_extra1').src = '';
+        document.getElementById('sklad_foto_extra2').src = '';
+        return;
+    }
+    fetch(`/ajax/get_sklad_info/?cislo_skladu=${cVal}`)
+        .then(r => r.json())
+        .then(info => {
+            // ПЛОХА / POSCHODIE, как прежде
+            if (info && info.plocha && info.poschodie) {
+                document.getElementById('sklad_info_span').textContent =
+                  `Plocha: ${info.plocha} m², Poschodie: ${info.poschodie}`;
+            } else {
+                document.getElementById('sklad_info_span').textContent = '';
+            }
+
+            // НОВОЕ: три фото
+            // Если бекенд вернул поля: foto_main, foto_extra1, foto_extra2
+            document.getElementById('sklad_foto_main').src   = info.foto_main   || '';
+            document.getElementById('sklad_foto_extra1').src = info.foto_extra1 || '';
+            document.getElementById('sklad_foto_extra2').src = info.foto_extra2 || '';
+        })
+        .catch(err => {
+            document.getElementById('sklad_info_span').textContent = '';
+            // Сброс фото
+            document.getElementById('sklad_foto_main').src   = '';
+            document.getElementById('sklad_foto_extra1').src = '';
+            document.getElementById('sklad_foto_extra2').src = '';
+        });
+    }
+
+    if (typSkladu) {
+        typSkladu.addEventListener('change', ()=>loadLokalita(true));
+        lokalita.addEventListener('change', ()=>loadVelkost(true));
+        velkost.addEventListener('change', ()=>loadCislo(true));
+
+        // [ИЗМЕНЁННЫЙ КОД] Теперь при смене cislo — вызываем и loadDobaPrenajmu, и showSkladInfo
+        cislo.addEventListener('change', () => {
+            loadDobaPrenajmu();
+            showSkladInfo();
+        });
+
+        // При загрузке
+        loadLokalita(true);
+    }
+
+    /* ==========================
+       (C) ШАГ 2: Fyz / Právnická
+       ========================== */
+    const pravneSelect = document.querySelector('#id_pravne_postavenie_najomcu');
+    const dphInfo = document.getElementById('dph_info');
+
+    const fyzickaFields = document.getElementById('fyzicka_osoba_fields');
+    const pravnickaFields = document.getElementById('pravnicka_osoba_fields');
+    const icDphBlock = document.getElementById('ic_dph_block');
+
+    const menoField = document.querySelector('#id_meno_a_priezvisko');
+    const nazovField = document.querySelector('#id_nazov');
+    const datumNarodenia = document.querySelector('#id_datum_narodenia');
+
+    /* Подготавливаем поля Крайна (fyzicka / pravnicka) - будут заполняться из JS */
+    const countrySelectFyz  = document.getElementById('id_krajina');
+    const countrySelectPrav = document.getElementById('id_sidlo_krajina');
+    const originalFyzVal    = '{{ form.krajina.value|default_if_none:"Slovensko" }}';
+    const originalPravVal   = '{{ form.sidlo_krajina.value|default_if_none:"Slovensko" }}';
+
+    /* Список стран для Krajina (тот же, что и для телефона, можно держать один массив) */
+    const countriesAll = [
+      "Slovensko","Afganistan","Albánsko","Aljaška","Alžírsko","Andora","Angola","Anguila","Antigua a Barbuda","Argentína","Arménsko","Aruba","Ascension","Austrália","Austrálske externé územia","Azerbajdžan","Azorské ostrovy","Bahamy","Bahrajn","Bangladéš","Barbados","Belgicko","Belize","Benin","Bermudy","Bhután","Bielorusko","Bolívia","Bosna a Hercegovina","Botswana","Brazília","Brunei","Bulharsko","Burkina Faso","Burundi","Cyprus","Čad","Česká republika","Čierna Hora","Čína","Dánsko","Demokratická rep. Kongo","Diego Garcia","Dominika","Dominikánska republika","Džibuti","Egypt","Ekvádor","Eritrea","Estónsko","Etiópia","Faerské ostrovy","Falklandy - Malvíny","Fidži","Filipíny","Fínsko","Francúzsko","Gabun","Gambia","Ghana","Gibraltar","Grécko","Grenada","Grónsko","Gruzínsko","Guadeloupe","Guam","Guatemala","Guinea - Bissau","Guinea - republika","Guyana - Francúzska","Guyana - republika","Haiti","Holandské Antily","Holandsko","Honduras","Hongkong","Chile","Chorvátsko","India","Indonézia","Irak","Irán","Írsko","Island","Izrael","Jamajka","Japonsko","Jemen","Jordánsko","JAR - Juhoafr. Rep.","Juhoslávia (Srbsko)","Kajmanské ostrovy","Kambodža","Kamerun","Kanada","Kapverdy","Katar","Kazachstan","Keňa","Kirgizstan","Kiribati","Kolumbia","Komory a Mayotte","Kongo","Kórea - Južná","Kórea - Severná - KĽDR","Kookove ostrovy","Kostarika","Kuba","Kuvajt","Laos","Lesotho","Libanon","Libéria","Líbya","Lichtenštajnsko","Litva","Lotyšsko","Luxembursko","Macao","Macedónia","Madagaskar","Maďarsko","Madeira","Malajzia","Malawi","Maledivy","Mali","Malta","Mariany - Severné","Maroko","Marshallove ostrovy","Martinik","Mauretánia","Maurícius","Mexiko","Mikronézia","Moldavsko","Monako","Mongolsko","Montserrat","Mozambik","Myanmar","Namíbia","Nauru","Nemecko","Nepál","Niger","Nigéria","Nikaragua","Niue","Nórsko","Nová Kaledónia","Nový Zéland","Omán","Pakistan","Palau","Palestína","Panama","Panenské ostrovy - GB","Panenské ostrovy - USA","Papua - Nová Guinea","Paraguay","Peru","Pobrežie slonoviny","Polynézia - FR","Poľsko","Portoriko","Portugalsko (Azory a Madeira)","Rakúsko","Reunion","Rovníková Guinea","Rumunsko","Rusko","Rwanda","SAE - Spoj. Arab. Emiráty","Salvador","Samoa - USA","Samoa - západná","San Marino","Saudská Arábia","Senegal","Seyschely","Sierra Leone","Singapur","Slovinsko","Somálsko","Srbsko (Juhoslávia)","Srí Lanka (Cejlón)","Stredoafr. Rep.","Sudán","Surinam","Svätá Helena","Svätá Lucia","Svätý Krištof a Nevis","Svätý Peter a Michal","Svätý Tomáš a Princov ostrov","Svätý Vincent a Grenadíny","Svazijsko","Sýria","Šalamúnove ostrovy","Španielsko","Švajčiarsko","ŠVÉDSKO","Tadžikistan","Tahiti","Taliansko","Tanzánia","Thajsko","Tchaj-wan","Togo","Tokelau","Tonga","Trinidad a Tobago","Tunis","Turecko","Turkmenistan","Turky","Tuvalu","Uganda","Ukrajina","Uruguay","USA","Uzbekistan","Vanuatu","Vatikán","Veľká Británia a Sev. Írsko","Venezuela","Vietnam","Wallis a Futuna","Zambia","Zimbabwe"
+    ];
+
+    const countryToCode = {
+      "Afganistan":"+93","Albánsko":"+355","Aljaška":"+1907","Alžírsko":"+213","Andora":"+376","Angola":"+244",
+      "Anguila":"+1264","Antigua a Barbuda":"+1268","Argentína":"+54","Arménsko":"+374","Aruba":"+297","Ascension":"+247",
+      "Austrália":"+61","Austrálske externé územia":"+672","Azerbajdžan":"+994","Azorské ostrovy":"+351","Bahamy":"+1242",
+      "Bahrajn":"+973","Bangladéš":"+880","Barbados":"+1246","Belgicko":"+32","Belize":"+501","Benin":"+229","Bermudy":"+1441",
+      "Bhután":"+975","Bielorusko":"+375","Bolívia":"+591","Bosna a Hercegovina":"+387","Botswana":"+267","Brazília":"+55",
+      "Brunei":"+673","Bulharsko":"+359","Burkina Faso":"+226","Burundi":"+257","Cyprus":"+357","Čad":"+235",
+      "Česká republika":"+420","Čierna Hora":"+381","Čína":"+86","Dánsko":"+45","Demokratická rep. Kongo":"+243",
+      "Diego Garcia":"+246","Dominika":"+1767","Dominikánska republika":"+1809","Džibuti":"+253","Egypt":"+20","Ekvádor":"+593",
+      "Eritrea":"+291","Estónsko":"+372","Etiópia":"+251","Faerské ostrovy":"+298","Falklandy - Malvíny":"+500","Fidži":"+679",
+      "Filipíny":"+63","Fínsko":"+358","Francúzsko":"+33","Gabun":"+241","Gambia":"+220","Ghana":"+233","Gibraltar":"+350",
+      "Grécko":"+30","Grenada":"+1473","Grónsko":"+299","Gruzínsko":"+995","Guadeloupe":"+590","Guam":"+671","Guatemala":"+502",
+      "Guinea - Bissau":"+245","Guinea - republika":"+224","Guyana - Francúzska":"+594","Guyana - republika":"+592","Haiti":"+509",
+      "Holandské Antily":"+599","Holandsko":"+31","Honduras":"+504","Hongkong":"+852","Chile":"+56","Chorvátsko":"+385",
+      "India":"+91","Indonézia":"+62","Irak":"+964","Irán":"+98","Írsko":"+353","Island":"+354","Izrael":"+972","Jamajka":"+1876",
+      "Japonsko":"+81","Jemen":"+967","Jordánsko":"+962","JAR - Juhoafr. Rep.":"+27","Juhoslávia (Srbsko)":"+381","Kajmanské ostrovy":"+1345",
+      "Kambodža":"+855","Kamerun":"+237","Kanada":"+1","Kapverdy":"+238","Katar":"+974","Kazachstan":"+7","Keňa":"+254","Kirgizstan":"+996",
+      "Kiribati":"+686","Kolumbia":"+57","Komory a Mayotte":"+269","Kongo":"+242","Kórea - Južná":"+82","Kórea - Severná - KĽDR":"+850",
+      "Kookove ostrovy":"+682","Kostarika":"+506","Kuba":"+53","Kuvajt":"+965","Laos":"+856","Lesotho":"+266","Libanon":"+961",
+      "Libéria":"+231","Líbya":"+218","Lichtenštajnsko":"+423","Litva":"+370","Lotyšsko":"+371","Luxembursko":"+352","Macao":"+853",
+      "Macedónia":"+389","Madagaskar":"+261","Maďarsko":"+36","Madeira":"+351","Malajzia":"+60","Malawi":"+265","Maledivy":"+960",
+      "Mali":"+223","Malta":"+356","Mariany - Severné":"+1670","Maroko":"+212","Marshallove ostrovy":"+692","Martinik":"+596",
+      "Mauretánia":"+222","Maurícius":"+230","Mexiko":"+52","Mikronézia":"+691","Moldavsko":"+373","Monako":"+377","Mongolsko":"+976",
+      "Montserrat":"+1664","Mozambik":"+258","Myanmar":"+95","Namíbia":"+264","Nauru":"+674","Nemecko":"+49","Nepál":"+977","Niger":"+227",
+      "Nigéria":"+234","Nikaragua":"+505","Niue":"+683","Nórsko":"+47","Nová Kaledónia":"+687","Nový Zéland":"+64","Omán":"+968",
+      "Pakistan":"+92","Palau":"+680","Palestína":"+970","Panama":"+507","Panenské ostrovy - GB":"+1284","Panenské ostrovy - USA":"+1340",
+      "Papua - Nová Guinea":"+675","Paraguay":"+595","Peru":"+51","Pobrežie slonoviny":"+225","Polynézia - FR":"+689","Poľsko":"+48",
+      "Portoriko":"+1787","Portugalsko (Azory a Madeira)":"+351","Rakúsko":"+43","Reunion":"+262","Rovníková Guinea":"+240","Rumunsko":"+40",
+      "Rusko":"+7","Rwanda":"+250","SAE - Spoj. Arab. Emiráty":"+971","Salvador":"+503","Samoa - USA":"+684","Samoa - západná":"+685",
+      "San Marino":"+378","Saudská Arábia":"+966","Senegal":"+221","Seyschely":"+248","Sierra Leone":"+232","Singapur":"+65","Slovinsko":"+386",
+      "Somálsko":"+252","Srbsko (Juhoslávia)":"+381","Srí Lanka (Cejlón)":"+94","Stredoafr. Rep.":"+236","Sudán":"+249","Surinam":"+597",
+      "Svätá Helena":"+290","Svätá Lucia":"+1758","Svätý Krištof a Nevis":"+1869","Svätý Peter a Michal":"+508",
+      "Svätý Tomáš a Princov ostrov":"+239","Svätý Vincent a Grenadíny":"+1809","Svazijsko":"+268","Sýria":"+963",
+      "Šalamúnove ostrovy":"+677","Španielsko":"+34","Švajčiarsko":"+41","ŠVÉDSKO":"+46","Tadžikistan":"+992","Tahiti":"+689",
+      "Taliansko":"+39","Tanzánia":"+255","Thajsko":"+66","Tchaj-wan":"+886","Togo":"+228","Tokelau":"+690","Tonga":"+676",
+      "Trinidad a Tobago":"+1868","Tunis":"+216","Turecko":"+90","Turkmenistan":"+993","Turky":"+1649","Tuvalu":"+688","Uganda":"+256",
+      "Ukrajina":"+380","Uruguay":"+598","USA":"+1","Uzbekistan":"+998","Vanuatu":"+678","Vatikán":"+39",
+      "Veľká Británia a Sev. Írsko":"+44","Venezuela":"+58","Vietnam":"+84","Wallis a Futuna":"+681","Zambia":"+260","Zimbabwe":"+263",
+      "Slovensko":"+421"
+    };
+
+    function fillCountrySelect(selectEl, selectedVal) {
+      selectEl.innerHTML = '';
+      countriesAll.forEach(country => {
+        const opt = document.createElement('option');
+        opt.value = country;
+        opt.textContent = country;
+        if (country === selectedVal) {
+          opt.selected = true;
+        }
+        selectEl.appendChild(opt);
+      });
+    }
+
+    fillCountrySelect(countrySelectFyz, originalFyzVal);
+    fillCountrySelect(countrySelectPrav, originalPravVal);
+
+    function setDatumNarodeniaRequired(isRequired) {
+        if (!datumNarodenia) return;
+        if (isRequired) {
+            datumNarodenia.setAttribute('required','required');
+        } else {
+            datumNarodenia.removeAttribute('required');
+        }
+    }
+
+    function updateVisibility() {
+        const pravneVal = pravneSelect.value || "";
+        if (pravneVal === "Právnická osoba (platca DPH)") {
+            dphInfo.classList.remove('hidden');
+        } else {
+            dphInfo.classList.add('hidden');
+        }
+
+        if (pravneVal === "Fyzická osoba") {
+            fyzickaFields.classList.remove('hidden');
+            setDatumNarodeniaRequired(true);
+        } else {
+            fyzickaFields.classList.add('hidden');
+            setDatumNarodeniaRequired(false);
+        }
+
+        if (pravneVal === "Právnická osoba (bez DPH)" || pravneVal === "Právnická osoba (platca DPH)") {
+            pravnickaFields.classList.remove('hidden');
+            if (pravneVal === "Právnická osoba (platca DPH)") {
+                icDphBlock.classList.remove('hidden');
+            } else {
+                icDphBlock.classList.add('hidden');
+            }
+        } else {
+            pravnickaFields.classList.add('hidden');
+        }
+        checkStep3Validity(); // чтобы обновлять enable/disable кнопки на 3-м шаге
+    }
+    pravneSelect.addEventListener('change', updateVisibility);
+
+    /* ==========================
+       (D) ШАГ 3: Поля + валидация
+       ========================== */
+    const phoneCodeSelect = document.getElementById('phone_code');
+    const phoneRestInput  = document.getElementById('phone_rest');
+    const phoneErrorSpan  = document.getElementById('phone_error');
+    const finalPhoneHidden= document.getElementById('id_cislo_pre_komunikaciu');
+    const emailField      = document.querySelector('#id_email');
+    const hesloField      = document.querySelector('#id_heslo');
+    const suhlasKaucia    = document.querySelector('#id_suhlas_kaucia');
+    const suhlasZmluva    = document.querySelector('#id_suhlas_zmluva');
+    const rentButton      = document.getElementById('rent_button');
+
+    // Наполним phone_code
+    const countryToDialMap = {
+      "Afganistan":"+93","Albánsko":"+355","Aljaška":"+1907","Alžírsko":"+213","Andora":"+376","Angola":"+244",
+      "Anguila":"+1264","Antigua a Barbuda":"+1268","Argentína":"+54","Arménsko":"+374","Aruba":"+297","Ascension":"+247",
+      "Austrália":"+61","Austrálske externé územia":"+672","Azerbajdžan":"+994","Azorské ostrovy":"+351","Bahamy":"+1242",
+      "Bahrajn":"+973","Bangladéš":"+880","Barbados":"+1246","Belgicko":"+32","Belize":"+501","Benin":"+229","Bermudy":"+1441",
+      "Bhután":"+975","Bielorusko":"+375","Bolívia":"+591","Bosna a Hercegovina":"+387","Botswana":"+267","Brazília":"+55",
+      "Brunei":"+673","Bulharsko":"+359","Burkina Faso":"+226","Burundi":"+257","Cyprus":"+357","Čad":"+235",
+      "Česká republika":"+420","Čierna Hora":"+381","Čína":"+86","Dánsko":"+45","Demokratická rep. Kongo":"+243",
+      "Diego Garcia":"+246","Dominika":"+1767","Dominikánska republika":"+1809","Džibuti":"+253","Egypt":"+20","Ekvádor":"+593",
+      "Eritrea":"+291","Estónsko":"+372","Etiópia":"+251","Faerské ostrovy":"+298","Falklandy - Malvíny":"+500","Fidži":"+679",
+      "Filipíny":"+63","Fínsko":"+358","Francúzsko":"+33","Gabun":"+241","Gambia":"+220","Ghana":"+233","Gibraltar":"+350",
+      "Grécko":"+30","Grenada":"+1473","Grónsko":"+299","Gruzínsko":"+995","Guadeloupe":"+590","Guam":"+671","Guatemala":"+502",
+      "Guinea - Bissau":"+245","Guinea - republika":"+224","Guyana - Francúzska":"+594","Guyana - republika":"+592","Haiti":"+509",
+      "Holandské Antily":"+599","Holandsko":"+31","Honduras":"+504","Hongkong":"+852","Chile":"+56","Chorvátsko":"+385",
+      "India":"+91","Indonézia":"+62","Irak":"+964","Irán":"+98","Írsko":"+353","Island":"+354","Izrael":"+972","Jamajka":"+1876",
+      "Japonsko":"+81","Jemen":"+967","Jordánsko":"+962","JAR - Juhoafr. Rep.":"+27","Juhoslávia (Srbsko)":"+381","Kajmanské ostrovy":"+1345",
+      "Kambodža":"+855","Kamerun":"+237","Kanada":"+1","Kapverdy":"+238","Katar":"+974","Kazachstan":"+7","Keňa":"+254","Kirgizstan":"+996",
+      "Kiribati":"+686","Kolumbia":"+57","Komory a Mayotte":"+269","Kongo":"+242","Kórea - Južná":"+82","Kórea - Severná - KĽDR":"+850",
+      "Kookove ostrovy":"+682","Kostarika":"+506","Kuba":"+53","Kuvajt":"+965","Laos":"+856","Lesotho":"+266","Libanon":"+961",
+      "Libéria":"+231","Líbya":"+218","Lichtenštajnsko":"+423","Litva":"+370","Lotyšsko":"+371","Luxembursko":"+352","Macao":"+853",
+      "Macedónia":"+389","Madagaskar":"+261","Maďarsko":"+36","Madeira":"+351","Malajzia":"+60","Malawi":"+265","Maledivy":"+960",
+      "Mali":"+223","Malta":"+356","Mariany - Severné":"+1670","Maroko":"+212","Marshallove ostrovy":"+692","Martinik":"+596",
+      "Mauretánia":"+222","Maurícius":"+230","Mexiko":"+52","Mikronézia":"+691","Moldavsko":"+373","Monako":"+377","Mongolsko":"+976",
+      "Montserrat":"+1664","Mozambik":"+258","Myanmar":"+95","Namíbia":"+264","Nauru":"+674","Nemecko":"+49","Nepál":"+977","Niger":"+227",
+      "Nigéria":"+234","Nikaragua":"+505","Niue":"+683","Nórsko":"+47","Nová Kaledónia":"+687","Nový Zéland":"+64","Omán":"+968",
+      "Pakistan":"+92","Palau":"+680","Palestína":"+970","Panama":"+507","Panenské ostrovy - GB":"+1284","Panenské ostrovy - USA":"+1340",
+      "Papua - Nová Guinea":"+675","Paraguay":"+595","Peru":"+51","Pobrežie slonoviny":"+225","Polynézia - FR":"+689","Poľsko":"+48",
+      "Portoriko":"+1787","Portugalsko (Azory a Madeira)":"+351","Rakúsko":"+43","Reunion":"+262","Rovníková Guinea":"+240","Rumunsko":"+40",
+      "Rusko":"+7","Rwanda":"+250","SAE - Spoj. Arab. Emiráty":"+971","Salvador":"+503","Samoa - USA":"+684","Samoa - západná":"+685",
+      "San Marino":"+378","Saudská Arábia":"+966","Senegal":"+221","Seyschely":"+248","Sierra Leone":"+232","Singapur":"+65","Slovinsko":"+386",
+      "Somálsko":"+252","Srbsko (Juhoslávia)":"+381","Srí Lanka (Cejlón)":"+94","Stredoafr. Rep.":"+236","Sudán":"+249","Surinam":"+597",
+      "Svätá Helena":"+290","Svätá Lucia":"+1758","Svätý Krištof a Nevis":"+1869","Svätý Peter a Michal":"+508",
+      "Svätý Tomáš a Princov ostrov":"+239","Svätý Vincent a Grenadíny":"+1809","Svazijsko":"+268","Sýria":"+963",
+      "Šalamúnove ostrovy":"+677","Španielsko":"+34","Švajčiarsko":"+41","ŠVÉDSKO":"+46","Tadžikistan":"+992","Tahiti":"+689",
+      "Taliansko":"+39","Tanzánia":"+255","Thajsko":"+66","Tchaj-wan":"+886","Togo":"+228","Tokelau":"+690","Tonga":"+676",
+      "Trinidad a Tobago":"+1868","Tunis":"+216","Turecko":"+90","Turkmenistan":"+993","Turky":"+1649","Tuvalu":"+688","Uganda":"+256",
+      "Ukrajina":"+380","Uruguay":"+598","USA":"+1","Uzbekistan":"+998","Vanuatu":"+678","Vatikán":"+39",
+      "Veľká Británia a Sev. Írsko":"+44","Venezuela":"+58","Vietnam":"+84","Wallis a Futuna":"+681","Zambia":"+260","Zimbabwe":"+263",
+      "Slovensko":"+421"
+    };
+    const sortedCountries = Object.keys(countryToDialMap).sort();
+    sortedCountries.forEach(country => {
+      const code = countryToDialMap[country];
+      const opt = document.createElement('option');
+      opt.value = code;
+      opt.textContent = code;
+      phoneCodeSelect.appendChild(opt);
+    });
+
+    // Поднимаем уже сохранённый телефон (если есть)
+    function restorePhone() {
+      const existing = finalPhoneHidden.value;
+      if (!existing) {
+        // если пустой, default +421
+        phoneCodeSelect.value = "+421";
+        phoneRestInput.value = "";
+        return;
+      }
+      // пробуем найти код
+      let matched = false;
+      for (let i=0; i<phoneCodeSelect.options.length; i++) {
+        const code = phoneCodeSelect.options[i].value;
+        if (existing.startsWith(code)) {
+          phoneCodeSelect.value = code;
+          phoneRestInput.value = existing.substring(code.length);
+          matched = true;
+          break;
+        }
+      }
+      if (!matched) {
+        phoneCodeSelect.value = "+421";
+        phoneRestInput.value  = existing; 
+      }
+    }
+    restorePhone();
+
+    let phoneCodeUserOverridden = false;
+    phoneCodeSelect.addEventListener('change', () => {
+      phoneCodeUserOverridden = true;
+      syncPhoneField();
+      checkStep3Validity();
+    });
+    phoneRestInput.addEventListener('input', () => {
+      const val = phoneRestInput.value.trim();
+      if (!val) {
+        // Если пустая строка
+        phoneErrorSpan.textContent = "Telefónne číslo musí byť zadané";
+        phoneErrorSpan.classList.add('active');
+        phoneRestInput.classList.add('invalid-input');
+      } else if (val.startsWith('0')) {
+        phoneErrorSpan.textContent = "Telefónne číslo nemôže začínať číslom 0";
+        phoneErrorSpan.classList.add('active');
+        phoneRestInput.classList.add('invalid-input');
+      } else {
+        phoneErrorSpan.textContent = "";
+        phoneErrorSpan.classList.remove('active');
+        phoneRestInput.classList.remove('invalid-input');
+      }
+      syncPhoneField();
+      checkStep3Validity();
+    });
+
+    function syncPhoneField() {
+      finalPhoneHidden.value = phoneCodeSelect.value.trim() + phoneRestInput.value.trim();
+    }
+
+    // Галочки
+    suhlasKaucia.addEventListener('change', checkStep3Validity);
+    suhlasZmluva.addEventListener('change', checkStep3Validity);
+    hesloField.addEventListener('input', checkStep3Validity);
+    emailField.addEventListener('input', checkStep3Validity);
+
+    // Проверяем корректность полей 3-го шага; если всё ок, кнопку разблокируем
+    function checkStep3Validity() {
+      let valid = true;
+
+      // 1) Явная проверка телефона
+      const val = phoneRestInput.value.trim();
+      if (!val) {
+        phoneErrorSpan.textContent = "Telefónne číslo musí byť zadané";
+        phoneErrorSpan.classList.add('active');
+        phoneRestInput.classList.add('invalid-input');
+        valid = false;
+      } else if (val.startsWith('0')) {
+        phoneErrorSpan.textContent = "Telefónne číslo nemôže začínať číslom 0";
+        phoneErrorSpan.classList.add('active');
+        phoneRestInput.classList.add('invalid-input');
+        valid = false;
+      } else {
+        phoneErrorSpan.textContent = "";
+        phoneErrorSpan.classList.remove('active');
+        phoneRestInput.classList.remove('invalid-input');
+      }
+      // 2) email
+      const emailVal = emailField.value.trim();
+      if (!emailVal.includes("@") || !emailVal.includes(".")) { 
+        valid = false; 
+      }
+      // 3) heslo (упрощённая проверка: достаточно не пустое, или ваша логика)
+      if (!hesloField.value.trim()) {
+        valid = false;
+      }
+      // 4) kaucia
+      if (!suhlasKaucia.checked) valid = false;
+      // 5) zmluva
+      if (!suhlasZmluva.checked) valid = false;
+
+      // Проверяем также галочки
+      if (valid && suhlasKaucia.checked && suhlasZmluva.checked) {
+        rentButton.removeAttribute('disabled');
+      } else {
+        rentButton.setAttribute('disabled','disabled');
+      }
+    }
+
+    // При клике на disabled кнопку выдать предупреждение
+    rentButton.addEventListener('click', (e) => {
+      if (rentButton.hasAttribute('disabled')) {
+        e.preventDefault();
+        alert("Prosím, vyplňte všetky polia na Krok 3 správne, aby ste mohli pokračovať.");
+        return false;
+      }
+    });
+
+    const phoneInfoIcon = document.getElementById('phoneInfoIcon');
+    const phoneTooltip  = document.getElementById('phoneTooltip');
+
+    phoneInfoIcon.addEventListener('click', ()=>{
+      if (phoneTooltip.style.display === 'block') {
+        phoneTooltip.style.display = 'none';
+      } else {
+        phoneTooltip.style.display = 'block';
+        // можно позиционировать toolip возле иконки:
+        const rect = phoneInfoIcon.getBoundingClientRect();
+        phoneTooltip.style.position = 'absolute';
+        phoneTooltip.style.left = rect.left + 'px';
+        phoneTooltip.style.top = (rect.bottom + 5) + 'px';
+      }
+    });
+
+    // клик вне тултипа, чтобы закрыть
+    document.addEventListener('click',(ev)=>{
+      if (ev.target!== phoneInfoIcon && !phoneTooltip.contains(ev.target)) {
+        phoneTooltip.style.display='none';
+      }
+    });
+
+    /* ==========================
+       (E) Модальное окно kaucie
+       ========================== */
+    const kaucieLink = document.getElementById('kaucieLink');
+    const kaucieModalOverlay = document.getElementById('kaucieModalOverlay');
+    const kaucieModalClose = document.getElementById('kaucieModalClose');
+
+    kaucieLink.addEventListener('click', (event) => {
+      event.preventDefault();
+      kaucieModalOverlay.style.display = 'block';
+    });
+    kaucieModalClose.addEventListener('click', () => {
+      kaucieModalOverlay.style.display = 'none';
+    });
+    kaucieModalOverlay.addEventListener('click', (event) => {
+      if (event.target === kaucieModalOverlay) {
+        kaucieModalOverlay.style.display = 'none';
+      }
+    });
+
+    /* ==========================
+       (F) Переход по шагам
+       ========================== */
+    document.getElementById('btnStep1Next').addEventListener('click', () => {
+      if (validateStep1()) {
+        showStep(2);
+      }
+    });
+    document.getElementById('btnStep2Back').addEventListener('click', () => {
+      showStep(1);
+    });
+    document.getElementById('btnStep2Next').addEventListener('click', () => {
+      if (validateStep2()) {
+        autoSetPhoneCodeByCountry();
+        showStep(3);
+        checkStep3Validity();
+      }
+    });
+    document.getElementById('btnStep3Back').addEventListener('click', () => {
+      showStep(2);
+    });
+
+    function validateStep1() {
+      let valid = true;
+      if (!typSkladu.value) valid = false;
+      if (!lokalita.value) valid = false;
+      if (!document.querySelector('#prenajat_sklad_od').value) valid = false;
+      if (!velkost.value) valid = false;
+      if (!cislo.value) valid = false;
+
+      const dobaSel = document.querySelector('input[name="doba_prenajmu"]:checked');
+      if (!dobaSel) valid = false;
+
+      if (!valid) {
+        alert("Prosím, vyplňte všetky polia v Krok 1 (Výber skladu).");
+      }
+      return valid;
+    }
+
+    function validateStep2() {
+      let valid = true;
+      const pravneVal = pravneSelect.value;
+      if (!pravneVal) valid = false;
+
+      if (pravneVal === "Fyzická osoba") {
+        if (!menoField.value.trim()) valid = false;
+        if (!datumNarodenia.value) valid = false;
+        const ulica = document.querySelector('#id_ulica').value.trim();
+        const cisloD = document.querySelector('#id_cislo_domu').value.trim();
+        const pscVal = document.querySelector('#id_psc').value.trim();
+        const mestoVal=document.querySelector('#id_mesto').value.trim();
+        const krajVal= document.querySelector('#id_krajina').value;
+        if (!ulica || !cisloD || !pscVal || !mestoVal || !krajVal) valid = false;
+      }
+      else if (pravneVal==="Právnická osoba (bez DPH)"|| pravneVal==="Právnická osoba (platca DPH)") {
+        if (!nazovField.value.trim()) valid = false;
+        const zast = document.querySelector('#id_zastupeny').value.trim();
+        if (!zast) valid = false;
+        const icoVal  = document.querySelector('#id_ico').value.trim();
+        const dicVal  = document.querySelector('#id_dic').value.trim();
+        if (!/^(\d{8})$/.test(icoVal))  valid = false;
+        if (!/^(\d{10})$/.test(dicVal)) valid = false;
+        if (pravneVal==="Právnická osoba (platca DPH)") {
+          const icDphVal = document.querySelector('#id_ic_dph').value.trim();
+          if (!/^[A-Za-z]{2}\d{10}$/.test(icDphVal)) valid = false;
+        }
+        const sulica= document.querySelector('#id_sidlo_ulica').value.trim();
+        const scdomu= document.querySelector('#id_sidlo_cislo_domu').value.trim();
+        const spsc  = document.querySelector('#id_sidlo_psc').value.trim();
+        const smest = document.querySelector('#id_sidlo_mesto').value.trim();
+        const skraj = document.querySelector('#id_sidlo_krajina').value.trim();
+        if(!sulica||!scdomu||!spsc||!smest||!skraj) valid = false;
+      }
+      if(!valid) {
+        alert("Prosím, vyplňte všetky polia v Krok 2 (Údaje nájomcu) správne.");
+      }
+      return valid;
+    }
+
+    function autoSetPhoneCodeByCountry() {
+      // 1) Узнаём, кто: fyzická osoba или právnická?
+      const pravneVal = document.querySelector('#id_pravne_postavenie_najomcu').value;
+
+      // 2) Если fyzická, берём страну из #id_krajina,
+      //    если právnická – из #id_sidlo_krajina
+      let selectedCountry = "";
+      if (pravneVal === "Fyzická osoba") {
+        selectedCountry = document.getElementById('id_krajina').value;
+      } else if (pravneVal==="Právnická osoba (bez DPH)"||pravneVal==="Právnická osoba (platca DPH)") {
+        selectedCountry = document.getElementById('id_sidlo_krajina').value;
+      }
+
+      // 3) Проверяем, есть ли в словаре
+      if (selectedCountry && countryToCode[selectedCountry]) {
+        // Устанавливаем phone_codeSelect.value = соответствующему коду
+        phoneCodeSelect.value = countryToCode[selectedCountry];
+        // Если пользователь ещё не ввёл phone_rest,
+        // можем обнулить phone_restInput.value, чтобы не мешать
+        if (!phoneRestInput.value.trim()) {
+          phoneRestInput.value = "";
+        }
+        // Синхронизируем
+        syncPhoneField();
+      }
+    }
+
+    /* Первичная инициализация */
+    showStep(currentStepVal);
+    updateVisibility();
+});
+</script>
+
+<!-- Скрипты для ограничения дат -->
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+    const dateField = document.querySelector('#prenajat_sklad_od');
+    if (dateField) {
+        fetch('/validate-date-range/')
+            .then(r=>r.json())
+            .then(data=>{
+                dateField.min=data.min_date;
+                dateField.max=data.max_date;
+                if(!dateField.value){
+                  dateField.value=data.min_date;
+                }
+            });
+    }
+});
+</script>
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+    const birthField = document.querySelector('#id_datum_narodenia');
+    if (birthField) {
+        fetch('/validate-birth-date-range/')
+            .then(r=>r.json())
+            .then(data=>{
+                birthField.min=data.min_date;
+                birthField.max=data.max_date;
+            });
+    }
+});
+</script>
+
+<!-- Inline-валидация по blur -->
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const textFields = [
+        { id: 'id_meno_a_priezvisko', pattern: /^[A-Za-z\-]+(?:\s[A-Za-z\-]+){1,3}$/, errMsg: "Meno a priezvisko musí obsahovať 2 až 4 slová, len písmená a pomlčky." },
+        { id: 'id_ulica',            pattern: null, errMsg: "Toto pole je povinné." },
+        { id: 'id_cislo_domu',       pattern: null, errMsg: "Toto pole je povinné." },
+        { id: 'id_psc',              pattern: null, errMsg: "Toto pole je povinné." },
+        { id: 'id_mesto',            pattern: null, errMsg: "Toto pole je povinné." },
+
+        { id: 'id_nazov',            pattern: null, errMsg: "Toto pole je povinné." },
+        { id: 'id_zastupeny',        pattern: /^[A-Za-z\-]+(?:\s[A-Za-z\-]+){1,3}$/, errMsg: "Zastúpený musí obsahovať Meno a Priezvisko, len písmená a pomlčky." },
+
+        { id: 'id_sidlo_ulica',      pattern: null, errMsg: "Toto pole je povinné." },
+        { id: 'id_sidlo_cislo_domu', pattern: null, errMsg: "Toto pole je povinné." },
+        { id: 'id_sidlo_psc',        pattern: null, errMsg: "Toto pole je povinné." },
+        { id: 'id_sidlo_mesto',      pattern: null, errMsg: "Toto pole je povinné." },
+
+        { id: 'id_ico',              pattern: /^\d{8}$/, errMsg: "IČO musí mať presne 8 číslic." },
+        { id: 'id_dic',              pattern: /^\d{10}$/, errMsg: "DIČ musí mať presne 10 číslic." },
+        { id: 'id_ic_dph',           pattern: /^[A-Za-z]{2}\d{10}$/, errMsg: "IČ DPH musí mať formát XX********** (2 písmená + 10 číslic)." },
+
+        // НОВЫЙ: контроль даты формата dd.mm.yyyy (>=18)
+        { id: 'id_datum_narodenia',  pattern: null, errMsg: "Podľa zákona si môžete prenajať sklad iba od 18 rokov." },
+
+        { id: 'id_email', pattern: /^[^\s@]+@[^\s@]+\.[^\s@]+$/, errMsg: "Nesprávny formát e-mailu." },
+        { id: 'id_heslo', pattern: /^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*\W).+$/, errMsg: "Heslo musí obsahovať veľké písmeno, malé písmeno, číslicu a špeciálny znak." }
+    ];
+
+    function isFieldVisible(elem) {
+        if (!elem) return false;
+        return !elem.closest('.hidden');
+    }
+
+    textFields.forEach(fi => {
+        const el = document.getElementById(fi.id);
+        if (!el) return;
+
+        el.addEventListener('blur', function() {
+            if (!isFieldVisible(el)) {
+                clearError(el, fi.id);
+                return;
+            }
+            const val = el.value.trim();
+
+            if (!val) {
+                showError(el, fi.id, fi.errMsg);
+                return;
+            }
+
+            // Если это 'id_datum_narodenia', проверяем возраст
+            if (fi.id === 'id_datum_narodenia') {
+                // Будет строка вида "2024-10-02"
+                const parts = val.split('-');
+                if (parts.length !== 3) {
+                    showError(el, fi.id, "Neplatný dátum (očekávame yyyy-mm-dd).");
+                    return;
+                } else {
+                    const year  = parseInt(parts[0], 10);
+                    const month = parseInt(parts[1], 10) - 1;  // JS 0..11
+                    const day   = parseInt(parts[2], 10);
+
+                    const birthDate = new Date(year, month, day);
+                    if (isNaN(birthDate.getTime())) {
+                        showError(el, fi.id, "Neplatný dátum (nedá sa zparsovať).");
+                        return;
+                    }
+                    // Проверяем возраст
+                    const now = new Date();
+                    let age = now.getFullYear() - birthDate.getFullYear();
+                    const m = now.getMonth() - birthDate.getMonth();
+                    if (m < 0 || (m === 0 && now.getDate() < birthDate.getDate())) {
+                        age--;
+                    }
+                    if (age < 18) {
+                        showError(el, fi.id, "Podľa zákona si môžete prenajať sklad iba od 18 rokov.");
+                        return;
+                    }
+                }
+            }
+
+            // Если есть fi.pattern, проверяем
+            if (fi.pattern && !fi.pattern.test(val)) {
+                showError(el, fi.id, fi.errMsg);
+                return;
+            }
+            // Всё ок
+            clearError(el, fi.id);
+        });
+    });
+
+    function showError(inputEl, id, msg) {
+        inputEl.classList.add('invalid-input');
+        const errSpan = document.getElementById('error_' + id);
+        if (errSpan) {
+            errSpan.textContent = msg;
+            errSpan.classList.add('active');
+        }
+    }
+
+    function clearError(inputEl, id) {
+        inputEl.classList.remove('invalid-input');
+        const errSpan = document.getElementById('error_' + id);
+        if (errSpan) {
+            errSpan.textContent = '';
+            errSpan.classList.remove('active');
+        }
+    }
+});
+</script>
+
+</body>
+</html>

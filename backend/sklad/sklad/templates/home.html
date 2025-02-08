@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Home Page</title>
+</head>
+<body>
+    <h1>Welcome to the Home Page</h1>
+</body>
+<!-- На странице /home/ (или другом месте) -->
+<form action="/home/" method="POST">
+    <!-- Поле ввода e-mail -->
+    <label for="email">E-mail:</label>
+    <input type="text" id="email" name="email" required>
+
+    <!-- Поле ввода пароля -->
+    <label for="heslo">Heslo:</label>
+    <input type="password" id="heslo" name="heslo" required>
+
+    <!-- Кнопка отправки формы -->
+    <button type="submit">Prihlásiť sa</button>
+</form>
+</html>

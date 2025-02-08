@@ -1,0 +1,44 @@
+services:
+  web:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: django_backend
+    volumes:
+      - ./backend:/app
+      - ./backend/sklad/sklad/import_data:/app/sklad/import_data
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+
+  db:
+    image: postgres:13
+    container_name: postgres_db
+    environment:
+      POSTGRES_DB: sklad_db
+      POSTGRES_USER: sklad_user
+      POSTGRES_PASSWORD: sklad_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  frontend:
+    # Собираем образ из папки ./frontend, где лежит Dockerfile
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: php_frontend
+    # Монтируем папку frontend внутрь /var/www/html, чтобы при изменениях 
+    # на хосте, в контейнере сразу обновлялись файлы PHP
+    volumes:
+      - ./frontend:/var/www/html
+    ports:
+      - "8080:80"
+    depends_on:
+      - db
+      - web
+
+volumes:
+  postgres_data:
