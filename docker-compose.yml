@@ -71,6 +71,7 @@ services:
       - "80:80"    # проброс порта 80 внешнему миру (при необходимости можно добавить HTTPS)
     volumes:
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/.htpasswd:/etc/nginx/.htpasswd:ro
     depends_on:
       - prod_frontend
       - prod_backend
