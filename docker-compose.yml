@@ -1,14 +1,29 @@
+version: "3.8"
+
 services:
-  web:
+  prod_backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: django_backend
+    container_name: Prod_backend
     volumes:
       - ./backend:/app
-      - ./backend/sklad/sklad/import_data:/app/sklad/import_data
+      - ./backend/sklad/sklad/import_data:/app/sklad/sklad/import_data
     ports:
       - "8000:8000"
+    depends_on:
+      - db
+
+  test_backend:
+    build:
+      context: ./test_backend
+      dockerfile: Dockerfile
+    container_name: Test_backend
+    volumes:
+      - ./test_backend:/app
+      - ./test_backend/sklad/sklad/import_data:/app/sklad/sklad/import_data
+    ports:
+      - "8001:8000"
     depends_on:
       - db
 
@@ -24,21 +39,43 @@ services:
     ports:
       - "5432:5432"
 
-  frontend:
-    # Собираем образ из папки ./frontend, где лежит Dockerfile
+  prod_frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    container_name: php_frontend
-    # Монтируем папку frontend внутрь /var/www/html, чтобы при изменениях 
-    # на хосте, в контейнере сразу обновлялись файлы PHP
+    container_name: prod_frontend
     volumes:
       - ./frontend:/var/www/html
     ports:
       - "8080:80"
     depends_on:
       - db
-      - web
+
+  test_frontend:
+    build:
+      context: ./test_frontend
+      dockerfile: Dockerfile
+    container_name: test_frontend
+    volumes:
+      - ./test_frontend:/var/www/html
+    ports:
+      - "8081:80"
+    depends_on:
+      - db
+
+  # Nginx в качестве обратного прокси
+  nginx:
+    image: nginx:latest
+    container_name: reverse_proxy
+    ports:
+      - "80:80"    # проброс порта 80 внешнему миру (при необходимости можно добавить HTTPS)
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+    depends_on:
+      - prod_frontend
+      - prod_backend
+      - test_frontend
+      - test_backend
 
 volumes:
   postgres_data:

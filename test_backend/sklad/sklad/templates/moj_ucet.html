@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+    <meta charset="UTF-8">
+    <title>Môj učet</title>
+</head>
+<body>
+    <h1>Vitajte, {{ request.user.meno_nazov }}!</h1>
+    <p>Tu bude váš osobný kabinet.</p>
+
+    <p><a href="{% url 'logout' %}">Odhlásiť sa</a></p>
+</body>
+</html>
