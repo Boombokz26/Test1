@@ -68,7 +68,10 @@ services:
     image: nginx:latest
     container_name: reverse_proxy
     ports:
-      - "80:80"    # проброс порта 80 внешнему миру (при необходимости можно добавить HTTPS)
+      - "8080:8080"   # Для prod_frontend (public frontend)
+      - "8000:8000"   # Для prod_backend (protected backend)
+      - "8081:8081"   # Для test_frontend (protected test frontend)
+      - "8001:8001"   # Для test_backend (protected test backend)
     volumes:
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
       - ./nginx/.htpasswd:/etc/nginx/.htpasswd:ro
