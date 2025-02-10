@@ -9,8 +9,7 @@ services:
     volumes:
       - ./backend:/app
       - ./backend/sklad/sklad/import_data:/app/sklad/sklad/import_data
-    ports:
-      - "8000:8000"
+    # Убираем direct ports
     depends_on:
       - db
 
@@ -22,8 +21,7 @@ services:
     volumes:
       - ./test_backend:/app
       - ./test_backend/sklad/sklad/import_data:/app/sklad/sklad/import_data
-    ports:
-      - "8001:8000"
+    # Убираем direct ports
     depends_on:
       - db
 
@@ -46,8 +44,7 @@ services:
     container_name: prod_frontend
     volumes:
       - ./frontend:/var/www/html
-    ports:
-      - "8080:80"
+    # Убираем direct ports
     depends_on:
       - db
 
@@ -58,8 +55,7 @@ services:
     container_name: test_frontend
     volumes:
       - ./test_frontend:/var/www/html
-    ports:
-      - "8081:80"
+    # Убираем direct ports
     depends_on:
       - db
 
@@ -69,7 +65,7 @@ services:
     container_name: reverse_proxy
     ports:
       - "8080:8080"   # Для prod_frontend (public frontend)
-      - "8002:8000"   # Для prod_backend (protected backend)
+      - "8000:8000"   # Для prod_backend (protected backend)
       - "8081:8081"   # Для test_frontend (protected test frontend)
       - "8001:8001"   # Для test_backend (protected test backend)
     volumes:
